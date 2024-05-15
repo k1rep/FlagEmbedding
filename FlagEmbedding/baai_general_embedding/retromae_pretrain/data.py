@@ -7,7 +7,7 @@ import torch.utils.data.dataset
 from datasets import Dataset, load_dataset, concatenate_datasets
 from transformers import DataCollatorForWholeWordMask
 
-from .utils import tensorize_batch
+from FlagEmbedding.baai_general_embedding.retromae_pretrain.utils import tensorize_batch
 
 
 class DatasetForPretraining(torch.utils.data.Dataset):
@@ -32,7 +32,7 @@ class DatasetForPretraining(torch.utils.data.Dataset):
             raise NotImplementedError(f"Not support this file format:{file}")
 
     def __getitem__(self, item):
-        return self.dataset[item]['text']
+        return self.dataset[item]['set']
 
     def __len__(self):
         return len(self.dataset)
