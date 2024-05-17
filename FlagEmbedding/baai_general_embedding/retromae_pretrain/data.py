@@ -32,7 +32,7 @@ class DatasetForPretraining(torch.utils.data.Dataset):
             raise NotImplementedError(f"Not support this file format:{file}")
 
     def __getitem__(self, item):
-        return self.dataset[item]['set']
+        return self.dataset[item]['text']
 
     def __len__(self):
         return len(self.dataset)

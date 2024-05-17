@@ -1,6 +1,8 @@
 import logging
 import os
 import sys
+import wandb
+import pdb
 
 import transformers
 from transformers import (
@@ -14,6 +16,7 @@ from transformers import (
     TrainerState,
     TrainerControl
 )
+from transformers.integrations import WandbCallback
 from transformers.trainer_utils import is_main_process
 
 from FlagEmbedding.baai_general_embedding.retromae_pretrain.arguments import ModelArguments, DataTrainingArguments
@@ -32,7 +35,29 @@ class TrainerCallbackForSaving(TrainerCallback):
         control.should_save = True
 
 
+class MyTrainer(PreTrainer):
+    def training_step(self, model, inputs):
+        # 将模型设置为训练模式
+        model.train()
+
+        # 前向传播，计算损失
+        loss = self.compute_loss(model, inputs)
+
+        # 这里插入断点
+        pdb.set_trace()
+
+        # 提取中间层的特征
+        outputs = model(**inputs)
+        hidden_states = outputs.hidden_states  # 假设你在模型中返回了中间层的状态
+
+        # 打印或记录中间层的特征
+        wandb.log({"hidden_states": hidden_states})
+
+        return loss
+
+
 def main():
+    wandb.init(project="retromae-pretrain")
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
@@ -61,6 +86,8 @@ def main():
     training_args: TrainingArguments
 
     training_args.remove_unused_columns = False
+    training_args.save_steps = 8000
+    training_args.fp16 = True
 
     # Setup logging
     logging.basicConfig(
@@ -109,15 +136,46 @@ def main():
                                    decoder_mlm_probability=data_args.decoder_mlm_probability,
                                    max_seq_length=data_args.max_seq_length)
 
+    # 加载FAISS索引和创建检索器
+    index = faiss.read_index("faiss_index.bin")
+    retriever = RagRetriever.from_pretrained(
+        "facebook/rag-token-base",
+        index=index,
+        passages=dataset  # 原始数据集，用于生成答案时参考
+    )
+
+    # 加载RAG模型
+    rag_model = RagTokenForGeneration.from_pretrained("facebook/rag-token-base", retriever=retriever)
+    rag_tokenizer = AutoTokenizer.from_pretrained("facebook/rag-token-base")
+
+    # 示例：使用RAG模型进行推理
+    query = "What is an example sentence?"
+    input_ids = rag_tokenizer(query, return_tensors="pt").input_ids
+    outputs = rag_model.generate(input_ids)
+    answer = rag_tokenizer.batch_decode(outputs, skip_special_tokens=True)
+    print("Answer:", answer)
+
     # Initialize our Trainer
-    trainer = PreTrainer(
+    trainer = MyTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset,
         data_collator=data_collator,
         tokenizer=tokenizer
     )
+    wandb.config.update({
+        "learning_rate": training_args.learning_rate,
+        "epochs": training_args.num_train_epochs,
+        "batch_size": training_args.per_device_train_batch_size,
+        "weight_decay": training_args.weight_decay,
+        "adam_beta1": training_args.adam_beta1,
+        "adam_beta2": training_args.adam_beta2,
+        "warmup_steps": training_args.warmup_steps,
+        "fp16": training_args.fp16
+    })
+
     trainer.add_callback(TrainerCallbackForSaving())
+    trainer.add_callback(WandbCallback())
 
     # # Training
     trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
