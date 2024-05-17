@@ -136,25 +136,6 @@ def main():
                                    decoder_mlm_probability=data_args.decoder_mlm_probability,
                                    max_seq_length=data_args.max_seq_length)
 
-    # 加载FAISS索引和创建检索器
-    index = faiss.read_index("faiss_index.bin")
-    retriever = RagRetriever.from_pretrained(
-        "facebook/rag-token-base",
-        index=index,
-        passages=dataset  # 原始数据集，用于生成答案时参考
-    )
-
-    # 加载RAG模型
-    rag_model = RagTokenForGeneration.from_pretrained("facebook/rag-token-base", retriever=retriever)
-    rag_tokenizer = AutoTokenizer.from_pretrained("facebook/rag-token-base")
-
-    # 示例：使用RAG模型进行推理
-    query = "What is an example sentence?"
-    input_ids = rag_tokenizer(query, return_tensors="pt").input_ids
-    outputs = rag_model.generate(input_ids)
-    answer = rag_tokenizer.batch_decode(outputs, skip_special_tokens=True)
-    print("Answer:", answer)
-
     # Initialize our Trainer
     trainer = MyTrainer(
         model=model,
