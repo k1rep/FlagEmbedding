@@ -137,7 +137,7 @@ def main():
                                    max_seq_length=data_args.max_seq_length)
 
     # Initialize our Trainer
-    trainer = MyTrainer(
+    trainer = PreTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset,

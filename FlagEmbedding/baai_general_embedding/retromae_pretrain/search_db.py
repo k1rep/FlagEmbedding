@@ -1,15 +1,17 @@
+import torch
 import logging
 import datasets
+import numpy as np
 from tqdm import tqdm
 from dataclasses import dataclass, field
 
 from transformers import HfArgumentParser
 
 from FlagEmbedding import FlagModel
+
 import chromadb
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class Args:
@@ -26,22 +28,13 @@ class Args:
         metadata={'help': 'Add query-side instruction?'}
     )
 
-    corpus_data: str = field(
-        default="code_search_net",
-        metadata={'help': 'candidate passages'}
-    )
     query_data: str = field(
         default="namespace-Pt/msmarco-corpus",
         metadata={'help': 'queries and their positive passages for evaluation'}
     )
-
     max_query_length: int = field(
         default=32,
         metadata={'help': 'Max query length.'}
-    )
-    max_passage_length: int = field(
-        default=128,
-        metadata={'help': 'Max passage length.'}
     )
     batch_size: int = field(
         default=256,
@@ -53,24 +46,29 @@ class Args:
     )
 
 
-def index(model: FlagModel, corpus: datasets.Dataset, batch_size: int = 256, max_length: int = 512):
+def search(model: FlagModel, queries: datasets.Dataset, collection, k: int = 100, batch_size: int = 256,
+           max_length: int = 512):
     """
-    1. Encode the entire corpus into dense embeddings;
-    2. Create chroma index;
+    1. Encode queries into dense embeddings;
+    2. Search through Chroma index
     """
-    corpus_embeddings = model.encode_corpus(corpus["whole_func_string"], batch_size=batch_size, max_length=max_length)
+    query_embeddings = model.encode_queries(queries["text"], batch_size=batch_size, max_length=max_length)
+    query_size = len(query_embeddings)
 
-    client = chromadb.Client()
-    collection = client.create_collection(name="corpus")
+    all_scores = []
+    all_indices = []
 
-    logger.info("Adding embeddings to Chroma...")
-    for idx, embedding in enumerate(tqdm(corpus_embeddings, desc="Indexing")):
-        collection.add(
-            embeddings=[embedding.tolist()],
-            metadatas=[{"id": idx}],
-            ids=[str(idx)]
+    for i in tqdm(range(0, query_size, batch_size), desc="Searching"):
+        j = min(i + batch_size, query_size)
+        query_embedding = query_embeddings[i: j]
+        results = collection.query(
+            query_embeddings=query_embedding.tolist(),
+            n_results=k
         )
-    return collection
+        all_scores.extend([res["distances"] for res in results])
+        all_indices.extend([res["ids"] for res in results])
+
+    return all_scores, all_indices
 
 
 if __name__ == "__main__":
@@ -81,6 +79,18 @@ if __name__ == "__main__":
                       if args.add_instruction else None,
                       use_fp16=args.fp16
                       )
-    t_corpus = datasets.load_dataset(args.corpus_data)
-    corpus = datasets.concatenate_datasets([t_corpus["train"], t_corpus["validation"], t_corpus["test"]])
-    collection = index(model, corpus, batch_size=args.batch_size)
+
+    query_data = datasets.load_dataset('json', data_files=args.query_data)
+    client = chromadb.Client()
+    collection = client.get_collection(name="corpus")
+
+    scores, indices = search(
+        model=model,
+        queries=query_data,
+        collection=collection,
+        k=args.k,
+        batch_size=args.batch_size,
+        max_length=args.max_query_length
+    )
+
+    print(scores, indices)
