@@ -23,9 +23,9 @@ class DatasetForPretraining(torch.utils.data.Dataset):
             print(f"Loading {data_dir}")
             self.dataset = self.load_dataset(data_dir)
 
-    def load_dataset(self, file):
+    def load_dataset(self, file, split):
         if file.endswith('.jsonl') or file.endswith('.json'):
-            return load_dataset('json', data_files=file)['train']
+            return load_dataset('json', data_files=file)[split]
         elif os.path.isdir(file):
             return Dataset.load_from_disk(file)
         else:

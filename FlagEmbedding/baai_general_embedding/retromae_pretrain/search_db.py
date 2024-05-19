@@ -20,7 +20,7 @@ class Args:
         metadata={'help': 'The encoder name or path.'}
     )
     fp16: bool = field(
-        default=False,
+        default=True,
         metadata={'help': 'Use fp16 in inference?'}
     )
     add_instruction: bool = field(
@@ -29,7 +29,7 @@ class Args:
     )
 
     query_data: str = field(
-        default="namespace-Pt/msmarco-corpus",
+        default="code_search_net",
         metadata={'help': 'queries and their positive passages for evaluation'}
     )
     max_query_length: int = field(
@@ -46,29 +46,31 @@ class Args:
     )
 
 
-def search(model: FlagModel, queries: datasets.Dataset, collection, k: int = 100, batch_size: int = 256,
+def search(model: FlagModel, query: str, collection, k: int = 100, batch_size: int = 256,
            max_length: int = 512):
     """
     1. Encode queries into dense embeddings;
     2. Search through Chroma index
     """
-    query_embeddings = model.encode_queries(queries["text"], batch_size=batch_size, max_length=max_length)
-    query_size = len(query_embeddings)
+    query_embedding = model.encode(query, batch_size=batch_size, max_length=max_length)
+    # query_size = len(query_embeddings)
+    #
+    # all_scores = []
+    # all_indices = []
+    #
+    # for i in tqdm(range(0, query_size, batch_size), desc="Searching"):
+    #     j = min(i + batch_size, query_size)
+    #     query_embedding = query_embeddings[i: j]
+    results = collection.query(
+        query_embeddings=query_embedding.tolist(),
+        n_results=k,
+        include=['distances', 'embeddings']
+    )
+    all_scores = np.array(results['distances'])
+    all_indices = np.array(results['ids'])
+    all_docs = results['embeddings']
 
-    all_scores = []
-    all_indices = []
-
-    for i in tqdm(range(0, query_size, batch_size), desc="Searching"):
-        j = min(i + batch_size, query_size)
-        query_embedding = query_embeddings[i: j]
-        results = collection.query(
-            query_embeddings=query_embedding.tolist(),
-            n_results=k
-        )
-        all_scores.extend([res["distances"] for res in results])
-        all_indices.extend([res["ids"] for res in results])
-
-    return all_scores, all_indices
+    return all_scores, all_indices, all_docs
 
 
 if __name__ == "__main__":
@@ -79,18 +81,22 @@ if __name__ == "__main__":
                       if args.add_instruction else None,
                       use_fp16=args.fp16
                       )
-
-    query_data = datasets.load_dataset('json', data_files=args.query_data)
-    client = chromadb.Client()
+    query_data = 'bubblesort'
+    # query_data = datasets.load_dataset(args.query_data, split='test')
+    # query_data = datasets.load_dataset('json', data_files=args.query_data)
+    # http slow, use local chroma server
+    client = chromadb.HttpClient(host='localhost', port=8000)
+    collections = client.list_collections()
+    print(collections)
     collection = client.get_collection(name="corpus")
 
-    scores, indices = search(
+    scores, indices, docs = search(
         model=model,
-        queries=query_data,
+        query=query_data,
         collection=collection,
         k=args.k,
         batch_size=args.batch_size,
         max_length=args.max_query_length
     )
 
-    print(scores, indices)
+    print(scores, indices, docs)

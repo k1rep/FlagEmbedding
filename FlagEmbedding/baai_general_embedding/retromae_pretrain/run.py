@@ -19,6 +19,8 @@ from transformers import (
 from transformers.integrations import WandbCallback
 from transformers.trainer_utils import is_main_process
 
+from torch.utils.tensorboard import SummaryWriter
+
 from FlagEmbedding.baai_general_embedding.retromae_pretrain.arguments import ModelArguments, DataTrainingArguments
 from FlagEmbedding.baai_general_embedding.retromae_pretrain.data import RetroMAECollator, DatasetForPretraining
 from FlagEmbedding.baai_general_embedding.retromae_pretrain.modeling import RetroMAEForPretraining
@@ -36,6 +38,10 @@ class TrainerCallbackForSaving(TrainerCallback):
 
 
 class MyTrainer(PreTrainer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.writer = SummaryWriter(log_dir=os.path.join(self.args.output_dir, 'logs'))
+
     def training_step(self, model, inputs):
         # 将模型设置为训练模式
         model.train()
@@ -53,7 +59,16 @@ class MyTrainer(PreTrainer):
         # 打印或记录中间层的特征
         wandb.log({"hidden_states": hidden_states})
 
+        for i, hidden_state in enumerate(hidden_states):
+            self.writer.add_histogram(f"hidden_states_layer_{i}", hidden_state, self.state.global_step)
+
         return loss
+
+    def on_epoch_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        self.writer.flush()
+
+    def __del__(self):
+        self.writer.close()
 
 
 def main():
