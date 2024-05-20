@@ -64,11 +64,11 @@ def search(model: FlagModel, query: str, collection, k: int = 100, batch_size: i
     results = collection.query(
         query_embeddings=query_embedding.tolist(),
         n_results=k,
-        include=['distances', 'embeddings']
+        include=['distances', 'embeddings', 'metadatas']
     )
     all_scores = np.array(results['distances'])
     all_indices = np.array(results['ids'])
-    all_docs = results['embeddings']
+    all_docs = results['metadatas']
 
     return all_scores, all_indices, all_docs
 

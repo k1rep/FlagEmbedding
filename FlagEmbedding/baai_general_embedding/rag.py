@@ -15,6 +15,10 @@ from FlagEmbedding import FlagModel
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+handler = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 
 def get_embedding(query: str, model: FlagModel) -> list:
@@ -30,7 +34,7 @@ def get_prompt(query: str, retrieved_res: list) -> dict:
 if __name__ == '__main__':
     embedding_model = FlagModel('BAAI/bge-base-en-v1.5', use_fp16=True)
     generator = generator.CodeLlamaGenerator()
-    client = chromadb.HttpClient(host='localhost', port=8000)
+    client = chromadb.PersistentClient(path='./retromae_pretrain/chroma')
     collection = client.get_collection(name="corpus")
     logger.info("Loading RAG with embedding model: BAAI/bge-base-en-v1.5, vector database: chroma, and llm: "
                 "codellama:13b")
