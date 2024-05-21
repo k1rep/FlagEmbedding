@@ -100,3 +100,6 @@ class RetroMAEForPretraining(nn.Module):
         hf_model = AutoModelForMaskedLM.from_pretrained(*args, **kwargs)
         model = cls(hf_model, model_args)
         return model
+
+    def get_input_embeddings(self):
+        return self.decoder_embeddings.word_embeddings

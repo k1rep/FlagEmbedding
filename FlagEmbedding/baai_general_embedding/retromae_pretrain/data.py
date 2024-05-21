@@ -11,25 +11,31 @@ from FlagEmbedding.baai_general_embedding.retromae_pretrain.utils import tensori
 
 
 class DatasetForPretraining(torch.utils.data.Dataset):
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, split=None):
         if os.path.isdir(data_dir):
             datasets = []
             for file in os.listdir(data_dir):
                 print(f"Loading {file}")
                 file = os.path.join(data_dir, file)
-                datasets.append(self.load_dataset(file))
+                datasets.append(self.load_dataset(file, split=split))
             self.dataset = concatenate_datasets(datasets)
         else:
             print(f"Loading {data_dir}")
-            self.dataset = self.load_dataset(data_dir)
+            self.dataset = self.load_dataset(data_dir, split=split)
 
-    def load_dataset(self, file, split):
-        if file.endswith('.jsonl') or file.endswith('.json'):
-            return load_dataset('json', data_files=file)[split]
+    def load_dataset(self, file, split=None):
+        # 检查文件扩展名是否为 .jsonl 或 .json
+        if file.endswith(('.jsonl', '.json')):
+            dataset = load_dataset('json', data_files=file)
+            if split:
+                return dataset[split]
+            return dataset
+        # 检查文件是否为目录
         elif os.path.isdir(file):
             return Dataset.load_from_disk(file)
         else:
-            raise NotImplementedError(f"Not support this file format:{file}")
+            # 如果文件格式不受支持，则抛出异常
+            raise NotImplementedError(f"Not support this file format: {file}")
 
     def __getitem__(self, item):
         return self.dataset[item]['text']

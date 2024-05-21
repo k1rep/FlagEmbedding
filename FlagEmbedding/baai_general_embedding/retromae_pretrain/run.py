@@ -17,6 +17,7 @@ from transformers import (
     TrainerControl
 )
 from transformers.integrations import WandbCallback
+from transformers.trainer_callback import CallbackHandler
 from transformers.trainer_utils import is_main_process
 
 from torch.utils.tensorboard import SummaryWriter
@@ -37,38 +38,34 @@ class TrainerCallbackForSaving(TrainerCallback):
         control.should_save = True
 
 
+class TrainerCallbackForLoggingEmbeddings(TrainerCallback):
+    def __init__(self, trainer, log_interval=1000):
+        self.trainer = trainer
+        self.log_interval = log_interval
+
+    def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        if state.global_step % self.log_interval == 0:
+            self.trainer.log_embeddings()
+
+
 class MyTrainer(PreTrainer):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, args: TrainingArguments, **kwargs):
+        super().__init__(**kwargs)
+        self.args = args
         self.writer = SummaryWriter(log_dir=os.path.join(self.args.output_dir, 'logs'))
-
-    def training_step(self, model, inputs):
-        # 将模型设置为训练模式
-        model.train()
-
-        # 前向传播，计算损失
-        loss = self.compute_loss(model, inputs)
-
-        # 这里插入断点
-        pdb.set_trace()
-
-        # 提取中间层的特征
-        outputs = model(**inputs)
-        hidden_states = outputs.hidden_states  # 假设你在模型中返回了中间层的状态
-
-        # 打印或记录中间层的特征
-        wandb.log({"hidden_states": hidden_states})
-
-        for i, hidden_state in enumerate(hidden_states):
-            self.writer.add_histogram(f"hidden_states_layer_{i}", hidden_state, self.state.global_step)
-
-        return loss
-
-    def on_epoch_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
-        self.writer.flush()
 
     def __del__(self):
         self.writer.close()
+
+    def log_embeddings(self):
+        embeddings = self.model.get_input_embeddings().weight
+        self.writer.add_embedding(embeddings, global_step=self.state.global_step, tag='input_embeddings')
+        self.writer.flush()
+
+    def add_callback(self, callback):
+        if not hasattr(self, 'callback_handler'):
+            self.callback_handler = CallbackHandler([], self.model, self.tokenizer, self.optimizer, self.lr_scheduler)
+        self.callback_handler.add_callback(callback)
 
 
 def main():
@@ -144,7 +141,7 @@ def main():
     else:
         raise ValueError("You must provide the model_name_or_path or config_name")
 
-    dataset = DatasetForPretraining(data_args.train_data)
+    dataset = DatasetForPretraining(data_args.train_data, split='train')
 
     data_collator = collator_class(tokenizer,
                                    encoder_mlm_probability=data_args.encoder_mlm_probability,
@@ -152,9 +149,9 @@ def main():
                                    max_seq_length=data_args.max_seq_length)
 
     # Initialize our Trainer
-    trainer = PreTrainer(
-        model=model,
+    trainer = MyTrainer(
         args=training_args,
+        model=model,
         train_dataset=dataset,
         data_collator=data_collator,
         tokenizer=tokenizer
@@ -171,6 +168,7 @@ def main():
     })
 
     trainer.add_callback(TrainerCallbackForSaving())
+    trainer.add_callback(TrainerCallbackForLoggingEmbeddings(trainer, log_interval=1000))
     trainer.add_callback(WandbCallback())
 
     # # Training
