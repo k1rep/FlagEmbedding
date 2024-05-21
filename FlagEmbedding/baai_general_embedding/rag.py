@@ -22,11 +22,20 @@ logger.addHandler(handler)
 
 
 def get_embedding(query: str, model: FlagModel) -> list:
+    """
+    Embed the query into a dense vector
+    """
     return model.encode(query).tolist()
 
 
 def get_prompt(query: str, retrieved_res: list) -> dict:
-    full_content = f"Query: {query}\nCode: {retrieved_res[0]}"
+    """
+    prompt engineering
+    concatenate the query and the retrieved code snippet
+    """
+    # 将前3段检索到的代码添加到提示中
+    code_segments = "\n".join(retrieved_res[:3])
+    full_content = f"Query: {query}\nCode snippets you can refer to: {code_segments}"
     message = {'content': full_content, 'role': 'user'}
     return message
 

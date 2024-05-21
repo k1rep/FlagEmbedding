@@ -1,6 +1,6 @@
-'''
+"""
 The codes are modified based on huggingface transformers library.
-'''
+"""
 
 import math
 from typing import Optional, Tuple
